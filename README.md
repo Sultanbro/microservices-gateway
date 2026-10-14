@@ -1,64 +1,123 @@
-<p align="center"><a href="https://laravel.com" target="_blank"><img src="https://raw.githubusercontent.com/laravel/art/master/logo-lockup/5%20SVG/2%20CMYK/1%20Full%20Color/laravel-logolockup-cmyk-red.svg" width="400"></a></p>
+# Microservices Gateway
 
-<p align="center">
-<a href="https://travis-ci.org/laravel/framework"><img src="https://travis-ci.org/laravel/framework.svg" alt="Build Status"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/dt/laravel/framework" alt="Total Downloads"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/v/laravel/framework" alt="Latest Stable Version"></a>
-<a href="https://packagist.org/packages/laravel/framework"><img src="https://img.shields.io/packagist/l/laravel/framework" alt="License"></a>
-</p>
+API-шлюз на **PHP / Laravel** для взаимодействия с сервисами конструктора документов и котировок. Приложение принимает запросы, выбирает сервис по маршруту, передаёт параметры через HTTP и возвращает ответ клиенту.
 
-## About Laravel
+## Мой вклад
 
-Laravel is a web application framework with expressive, elegant syntax. We believe development must be an enjoyable and creative experience to be truly fulfilling. Laravel takes the pain out of development by easing common tasks used in many web projects, such as:
+Самостоятельно разработал gateway: маршруты интеграций, общий механизм отправки HTTP-запросов, обработку ответов и настройку доступа между сервисами.
 
-- [Simple, fast routing engine](https://laravel.com/docs/routing).
-- [Powerful dependency injection container](https://laravel.com/docs/container).
-- Multiple back-ends for [session](https://laravel.com/docs/session) and [cache](https://laravel.com/docs/cache) storage.
-- Expressive, intuitive [database ORM](https://laravel.com/docs/eloquent).
-- Database agnostic [schema migrations](https://laravel.com/docs/migrations).
-- [Robust background job processing](https://laravel.com/docs/queues).
-- [Real-time event broadcasting](https://laravel.com/docs/broadcasting).
+## Основные возможности
 
-Laravel is accessible, powerful, and provides tools required for large, robust applications.
+- **Document Designer:** маршруты справочников, конструктора документов, редактора строк и колонок, кнопок, нумераторов, атрибутов и бизнес-процессов.
+- **Mycent Quotation:** передача запроса `full-editor` в сервис котировок.
+- **Общая логика интеграций:** повторное использование HTTP-клиента и обработки CRUD-запросов через traits.
+- **Конфигурация сервисов:** отдельный базовый URL и заголовок авторизации для каждой интеграции.
+- **Два контура доступа:** пользовательские маршруты `/api/*` с Bearer middleware и внутренние `/service/*` с проверкой сервисного секрета.
 
-## Learning Laravel
+## Стек
 
-Laravel has the most extensive and thorough [documentation](https://laravel.com/docs) and video tutorial library of all modern web application frameworks, making it a breeze to get started with the framework.
+| Часть | Технологии |
+| --- | --- |
+| Backend | PHP, Laravel 8.83.10 по `composer.lock` |
+| HTTP-интеграции | Guzzle 7.4.2 |
+| Данные | Eloquent ORM, миграции, репозитории пользователей |
+| Инструменты | Composer, PHPUnit 9, Laravel Telescope |
+| Развёртывание | Docker, Nginx, PHP-FPM, Supervisor |
 
-If you don't feel like reading, [Laracasts](https://laracasts.com) can help. Laracasts contains over 1500 video tutorials on a range of topics including Laravel, modern PHP, unit testing, and JavaScript. Boost your skills by digging into our comprehensive video library.
+Основная логика шлюза написана на PHP. JavaScript и Laravel Mix присутствуют в составе ресурсов приложения.
 
-## Laravel Sponsors
+## Как проходит запрос
 
-We would like to extend our thanks to the following sponsors for funding Laravel development. If you are interested in becoming a sponsor, please visit the Laravel [Patreon page](https://patreon.com/taylorotwell).
+```text
+Клиент → /api/handbook
+       → BearerAuthenticate
+       → DocumentDesignerController
+       → RouteData + RequestService → HTTP → Document Designer
+       ← ApiResponse ← ответ сервиса
+```
 
-### Premium Partners
+Контроллер интеграции задаёт `base_uri` и `secret` из Laravel config. [RouteData](app/Traits/Request/RouteData.php) получает метод и путь из маршрута и убирает префикс `/api`. [RequestService](app/Traits/Request/RequestService.php) отправляет запрос через Guzzle с параметрами `form_params` и заголовком `Authorization`, содержащим секрет выбранного сервиса.
 
-- **[Vehikl](https://vehikl.com/)**
-- **[Tighten Co.](https://tighten.co)**
-- **[Kirschbaum Development Group](https://kirschbaumdevelopment.com)**
-- **[64 Robots](https://64robots.com)**
-- **[Cubet Techno Labs](https://cubettech.com)**
-- **[Cyber-Duck](https://cyber-duck.co.uk)**
-- **[Many](https://www.many.co.uk)**
-- **[Webdock, Fast VPS Hosting](https://www.webdock.io/en)**
-- **[DevSquad](https://devsquad.com)**
-- **[Curotec](https://www.curotec.com/services/technologies/laravel/)**
-- **[OP.GG](https://op.gg)**
-- **[CMS Max](https://www.cmsmax.com/)**
-- **[WebReinvent](https://webreinvent.com/?utm_source=laravel&utm_medium=github&utm_campaign=patreon-sponsors)**
+Для создания и обновления предусмотрено добавление полей `created_by` / `updated_by` из текущего пользователя, если эти поля не переданы в запросе. [ApiResponse](app/Traits/Request/ApiResponse.php) формирует ответ с JSON content type; успешный ответ по умолчанию получает статус `200`, ошибки обрабатываются отдельно. Это прикладной шлюз с заданными маршрутами, а не универсальный прозрачный HTTP-прокси.
 
-## Contributing
+## Маршруты интеграций
 
-Thank you for considering contributing to the Laravel framework! The contribution guide can be found in the [Laravel documentation](https://laravel.com/docs/contributions).
+| Путь | Назначение | Сервис |
+| --- | --- | --- |
+| `/api/handbook` | Справочники | Document Designer |
+| `/api/document-constructor` | Конструктор документов | Document Designer |
+| `/api/row-column-editor` | Редактор строк и колонок | Document Designer |
+| `/api/button-editor` | Редактор кнопок | Document Designer |
+| `/api/numerator` | Нумераторы | Document Designer |
+| `/api/attribute` | Атрибуты | Document Designer |
+| `/api/document-row` | Строки документа | Document Designer |
+| `/api/business_process` | Бизнес-процессы | Document Designer |
+| `POST /api/full-editor` | Запрос редактора | Mycent Quotation |
 
-## Code of Conduct
+Для ресурсных маршрутов общий trait реализует список, просмотр, создание, обновление и удаление. Дополнительные POST-маршруты `handbook/joint`, `handbook/dicti`, `handbook/dictiSaveInKias` и `numerator/get/on` объявлены в [routes/api.php](routes/api.php). Формат прикладных данных определяется принимающим сервисом.
 
-In order to ensure that the Laravel community is welcoming to all, please review and abide by the [Code of Conduct](https://laravel.com/docs/contributions#code-of-conduct).
+Внутренний маршрут `POST /service/user/query` объявлен отдельно в [routes/service.php](routes/service.php). Его middleware сравнивает значение заголовка `Authorization` со списком `ALLOWED_SECRETS` через `hash_equals`; префикс `Bearer` для этого сравнения не добавляется. Пустой список не разрешает доступ.
 
-## Security Vulnerabilities
+## Где смотреть код
 
-If you discover a security vulnerability within Laravel, please send an e-mail to Taylor Otwell via [taylor@laravel.com](mailto:taylor@laravel.com). All security vulnerabilities will be promptly addressed.
+| Файл | Назначение |
+| --- | --- |
+| [DocumentDesignerController](app/Http/Controllers/Api/Services/DocumentDesigner/DocumentDesignerController.php) | Подключение сервиса документов |
+| [MycentQuotationController](app/Http/Controllers/Api/Services/MycentQuotation/MycentQuotationController.php) | Подключение сервиса котировок |
+| [RequestService](app/Traits/Request/RequestService.php) | HTTP-клиент и общие обработчики запросов |
+| [RouteData](app/Traits/Request/RouteData.php) | Преобразование маршрута шлюза в путь сервиса |
+| [AuthenticateAccess](app/Http/Middleware/AuthenticateAccess.php) | Проверка доступа внутренних сервисов |
+| [BearerAuthenticate](app/Http/Middleware/BearerAuthenticate.php) | Пользовательская авторизация |
+| [RouteServiceProvider](app/Providers/RouteServiceProvider.php) | Подключение групп `/api` и `/service` |
+| [config/services.php](config/services.php) | URL, секреты сервисов и список разрешённых ключей |
 
-## License
+## Настройка окружения
 
-The Laravel framework is open-sourced software licensed under the [MIT license](https://opensource.org/licenses/MIT).
+Для интеграционного запуска нужны PHP, Composer, база данных, сервисы Document Designer и Mycent Quotation, а также модуль пользовательской авторизации. В `composer.json` указан PHP `^7.3|^8.0`; существующий Dockerfile использует PHP 8.0. Требования конкретных зависимостей зафиксированы в `composer.lock`.
+
+Начальная подготовка исходников и зависимостей:
+
+```sh
+git clone https://github.com/Sultanbro/microservices-gateway.git
+cd microservices-gateway
+cp .env.example .env
+composer install --no-scripts
+composer check-platform-reqs
+```
+
+`--no-scripts` позволяет установить зависимости без автоматического запуска Laravel. Для загрузки приложения сначала нужно восстановить отсутствующие зависимости: в `config/app.php` зарегистрированы, например, `EventServiceProvider` и `KeyCloakServiceProvider`, файлов которых нет в текущем репозитории. `BearerAuthenticate` также ссылается на отсутствующий `KeyCloakServiceInterface`. Изменения только `.env` для полноценного запуска недостаточно.
+
+| Переменные `.env` | Назначение |
+| --- | --- |
+| `APP_URL` | Локальный адрес шлюза, например `http://127.0.0.1:8000` |
+| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | Подключение к отдельной локальной базе |
+| `DOCUMENT_DESIGNER_SERVICE_BASE_URI` | Адрес сервиса документов |
+| `DOCUMENT_DESIGNER_SERVICE_SECRET` | Значение исходящего заголовка `Authorization` для сервиса документов |
+| `MYCENT_QUOTATION_SERVICE_BASE_URI` | Адрес сервиса котировок |
+| `MYCENT_QUOTATION_SERVICE_SECRET` | Значение исходящего заголовка `Authorization` для сервиса котировок |
+| `ALLOWED_SECRETS` | Разрешённые ключи входящих запросов `/service/*`, разделённые запятыми |
+
+Адреса `*.example.invalid` в `.env.example` — примеры для замены на ваши локальные сервисы. `RouteData` формирует путь с начальным `/`, поэтому учитывайте это при настройке базового URL принимающего сервиса.
+
+После восстановления модулей приложения и настройки окружения:
+
+```sh
+composer dump-autoload
+php artisan key:generate
+php artisan config:clear
+php artisan migrate
+php artisan route:list
+php artisan serve --host=127.0.0.1 --port=8000
+```
+
+`DatabaseSeeder` не создаёт демонстрационные данные. Существующий Dockerfile использует частный реестр образов и внешнюю конфигурацию; для самостоятельной локальной среды его потребуется адаптировать. Сквозной запуск шлюза с принимающими сервисами пока не проверен.
+
+## Проверки
+
+В `tests/` находятся базовые примеры PHPUnit. После восстановления загрузки приложения можно выполнять `php artisan test`. Feature-пример ожидает `200` на `/`, хотя `routes/web.php` не задаёт такой маршрут, поэтому он требует обновления.
+
+Следующий шаг для проверки интеграций — тесты преобразования путей, передачи параметров, проверки сервисных ключей и обработки ошибок принимающих сервисов.
+
+## Зависимости и лицензии
+
+Laravel framework распространяется по [лицензии MIT](https://opensource.org/licenses/MIT). Условия остальных зависимостей указаны в их пакетах и `composer.lock`.
