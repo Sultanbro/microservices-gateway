@@ -34,5 +34,3 @@ Set `PUSHER_APP_SECRET` only in the backend runtime environment.
 
 Gateway access is denied unless a non-empty `ALLOWED_SECRETS` value is configured.
 Dependencies are installed from `composer.lock`; the vendor directory is not versioned.
-
-This is a sanitized snapshot of a legacy project for source review. It does not include operational data or credentials. A clean credential scan is not a full application security audit. Review dependencies and deployment settings before running a public service.
