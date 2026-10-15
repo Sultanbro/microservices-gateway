@@ -1,0 +1,3 @@
+/public/vendor/** linguist-vendored
+/public/js/app.js linguist-generated
+/public/css/app.css linguist-generated
