@@ -1,5 +1,7 @@
 # Microservices Gateway
 
+[![Gateway checks](https://github.com/Sultanbro/microservices-gateway/actions/workflows/tests.yml/badge.svg)](https://github.com/Sultanbro/microservices-gateway/actions/workflows/tests.yml)
+
 API-шлюз на **PHP / Laravel** для взаимодействия с сервисами конструктора документов и котировок. Приложение принимает запросы, выбирает сервис по маршруту, передаёт параметры через HTTP и возвращает ответ клиенту.
 
 ## Мой вклад
@@ -36,9 +38,9 @@ API-шлюз на **PHP / Laravel** для взаимодействия с се�
        ← ApiResponse ← ответ сервиса
 ```
 
-Контроллер интеграции задаёт `base_uri` и `secret` из Laravel config. [RouteData](app/Traits/Request/RouteData.php) получает метод и путь из маршрута и убирает префикс `/api`. [RequestService](app/Traits/Request/RequestService.php) отправляет запрос через Guzzle с параметрами `form_params` и заголовком `Authorization`, содержащим секрет выбранного сервиса.
+Контроллер интеграции задаёт `base_uri` и `secret` из Laravel config. [RouteData](app/Traits/Request/RouteData.php) получает метод и путь из маршрута и убирает префикс `/api`. [RequestService](app/Traits/Request/RequestService.php) отправляет запрос через Laravel HTTP Client: GET-параметры передаются в query string, данные записи — как form params. Заголовок `Authorization` содержит секрет выбранного сервиса.
 
-Для создания и обновления предусмотрено добавление полей `created_by` / `updated_by` из текущего пользователя, если эти поля не переданы в запросе. [ApiResponse](app/Traits/Request/ApiResponse.php) формирует ответ с JSON content type; успешный ответ по умолчанию получает статус `200`, ошибки обрабатываются отдельно. Это прикладной шлюз с заданными маршрутами, а не универсальный прозрачный HTTP-прокси.
+При создании и изменении поля автора задаются сервером: переданное клиентом значение не заменяет текущего пользователя. HTTP-метод сохраняется, включая PATCH; успешный статус принимающего сервиса передаётся клиенту, в том числе `201` и `204`. При сетевой ошибке возвращается `502`, при отсутствии настройки — `503`. Детали внутренних адресов и исключений в ответ не включаются. Перенаправления не выполняются.
 
 ## Маршруты интеграций
 
@@ -71,52 +73,43 @@ API-шлюз на **PHP / Laravel** для взаимодействия с се�
 | [RouteServiceProvider](app/Providers/RouteServiceProvider.php) | Подключение групп `/api` и `/service` |
 | [config/services.php](config/services.php) | URL, секреты сервисов и список разрешённых ключей |
 
-## Настройка окружения
-
-Для интеграционного запуска нужны PHP, Composer, база данных, сервисы Document Designer и Mycent Quotation, а также модуль пользовательской авторизации. В `composer.json` указан PHP `^7.3|^8.0`; существующий Dockerfile использует PHP 8.0. Требования конкретных зависимостей зафиксированы в `composer.lock`.
-
-Начальная подготовка исходников и зависимостей:
+## Проверки одной командой
 
 ```sh
 git clone https://github.com/Sultanbro/microservices-gateway.git
 cd microservices-gateway
-cp .env.example .env
-composer install --no-scripts
-composer check-platform-reqs
+docker compose -f compose.test.yml run --build --rm tests
 ```
 
-`--no-scripts` позволяет установить зависимости без автоматического запуска Laravel. Для загрузки приложения сначала нужно восстановить отсутствующие зависимости: в `config/app.php` зарегистрированы, например, `EventServiceProvider` и `KeyCloakServiceProvider`, файлов которых нет в текущем репозитории. `BearerAuthenticate` также ссылается на отсутствующий `KeyCloakServiceInterface`. Изменения только `.env` для полноценного запуска недостаточно.
+Нужен Docker с Compose v2. Контейнер устанавливает зависимости из `composer.lock` и запускает **14 тестов**. PHP 8.1 используется для воспроизведения этого lock-файла; обновление устаревшего стека перед производственным развёртыванием остаётся отдельной задачей.
 
-| Переменные `.env` | Назначение |
-| --- | --- |
-| `APP_URL` | Локальный адрес шлюза, например `http://127.0.0.1:8000` |
-| `DB_CONNECTION`, `DB_HOST`, `DB_PORT`, `DB_DATABASE`, `DB_USERNAME`, `DB_PASSWORD` | Подключение к отдельной локальной базе |
-| `DOCUMENT_DESIGNER_SERVICE_BASE_URI` | Адрес сервиса документов |
-| `DOCUMENT_DESIGNER_SERVICE_SECRET` | Значение исходящего заголовка `Authorization` для сервиса документов |
-| `MYCENT_QUOTATION_SERVICE_BASE_URI` | Адрес сервиса котировок |
-| `MYCENT_QUOTATION_SERVICE_SECRET` | Значение исходящего заголовка `Authorization` для сервиса котировок |
-| `ALLOWED_SECRETS` | Разрешённые ключи входящих запросов `/service/*`, разделённые запятыми |
+[GatewayTest](tests/Feature/GatewayTest.php) проверяет реальные маршруты Laravel и Bearer middleware: параметры GET, создание, PATCH, удаление, выбор сервиса, передачу статусов, запрет подмены автора, ошибки сети и отклонение токенов. [ServiceAccessTest](tests/Feature/ServiceAccessTest.php) проверяет сервисные ключи и запрет доступа при пустой конфигурации.
 
-Адреса `*.example.invalid` в `.env.example` — примеры для замены на ваши локальные сервисы. `RouteData` формирует путь с начальным `/`, поэтому учитывайте это при настройке базового URL принимающего сервиса.
+HTTP-ответы внешних сервисов подменены через `Http::fake`, для локального пользователя и токена используется временная SQLite-база в памяти. Тесты не обращаются к рабочим сервисам и не запускают миграции прикладной базы. Это проверка шлюза в изоляции; сквозная работа с реальными Document Designer и Mycent Quotation требует их окружения. Тот же набор выполняет GitHub Actions.
 
-После восстановления модулей приложения и настройки окружения:
+## Настройка интеграционного окружения
 
 ```sh
-composer dump-autoload
+cp .env.example .env
+composer install
 php artisan key:generate
 php artisan config:clear
-php artisan migrate
 php artisan route:list
-php artisan serve --host=127.0.0.1 --port=8000
 ```
 
-`DatabaseSeeder` не создаёт демонстрационные данные. Существующий Dockerfile использует частный реестр образов и внешнюю конфигурацию; для самостоятельной локальной среды его потребуется адаптировать. Сквозной запуск шлюза с принимающими сервисами пока не проверен.
+| Переменная | Назначение |
+| --- | --- |
+| `DB_*` | Отдельная локальная база пользователей и токенов |
+| `KEYCLOAK_USERINFO_URL` | Полный URL userinfo доверенного realm Keycloak |
+| `DOCUMENT_DESIGNER_SERVICE_BASE_URI`, `DOCUMENT_DESIGNER_SERVICE_SECRET` | Базовый URL и сервисный ключ Document Designer |
+| `MYCENT_QUOTATION_SERVICE_BASE_URI`, `MYCENT_QUOTATION_SERVICE_SECRET` | Базовый URL и сервисный ключ Mycent Quotation |
+| `ALLOWED_SECRETS` | Ключи для `/service/*`, разделённые запятыми |
 
-## Проверки
+Bearer-токен должен существовать в локальной таблице `user_tokens`, быть связан с пользователем и успешно пройти userinfo. Ошибка, истечение токена или недоступность Keycloak не разрешают запрос. Получение токенов и создание пользователей выполняются внешним сервисом авторизации; неработавшие маршруты login/register/reset, для которых в репозитории не было реализации, удалены.
 
-В `tests/` находятся базовые примеры PHPUnit. После восстановления загрузки приложения можно выполнять `php artisan test`. Feature-пример ожидает `200` на `/`, хотя `routes/web.php` не задаёт такой маршрут, поэтому он требует обновления.
+Убраны регистрации отсутствовавших service providers; модуль проверки userinfo реализован в репозитории. Внутренний `/service/user/query` зависит от прикладных данных пользователей и требует отдельной проверки в соответствующем окружении.
 
-Следующий шаг для проверки интеграций — тесты преобразования путей, передачи параметров, проверки сервисных ключей и обработки ошибок принимающих сервисов.
+Адреса `*.example.invalid` — примеры. Перед запуском настройте сервисы и базу; основной Dockerfile и `.deploy/` относятся к прежней внешней инфраструктуре. Локальный [Dockerfile для проверок](docker/local/Dockerfile) не использует частный реестр.
 
 ## Зависимости и лицензии
 
