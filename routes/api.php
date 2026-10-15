@@ -51,39 +51,35 @@ use App\Http\Controllers\Api\Services\MycentQuotation;
 
 
 //Auth route
-Route::post('/register', [RegisterController::class, 'index'])->withoutMiddleware('auth.bearer');
-Route::post('/login', [LoginController::class, 'index'])->withoutMiddleware('auth.bearer');
-Route::post('/logout', [LogoutController::class, 'index'])->middleware('auth.bearer');
-Route::post('/reset/', [RegisterController::class, 'resetPassword'])->withoutMiddleware('auth.bearer');
 
 //DocumentDesignerService route
 //Handbook route
-Route::resource('handbook', DocumentDesignerController::class);
+Route::apiResource('handbook', DocumentDesignerController::class);
 Route::post('handbook/joint', [DocumentDesignerController::class, 'store']);
 Route::post('handbook/dicti', [DocumentDesignerController::class, 'store']);
 Route::post('handbook/dictiSaveInKias', [DocumentDesignerController::class, 'store']);
 
 //Document Constructor route
-Route::resource('document-constructor', DocumentDesignerController::class);
+Route::apiResource('document-constructor', DocumentDesignerController::class);
 
 //Document Row Column Editor
-Route::resource('row-column-editor', DocumentDesignerController::class);
+Route::apiResource('row-column-editor', DocumentDesignerController::class);
 
 //Button Editor route
-Route::resource('button-editor', DocumentDesignerController::class);
+Route::apiResource('button-editor', DocumentDesignerController::class);
 
 //Numerator route
-Route::resource('numerator', DocumentDesignerController::class);
+Route::apiResource('numerator', DocumentDesignerController::class);
 Route::post('numerator/get/on', [DocumentDesignerController::class, 'store']);
 
 //Attribute route
-Route::resource('attribute', DocumentDesignerController::class);
+Route::apiResource('attribute', DocumentDesignerController::class);
 
 //Document Row route
-Route::resource('document-row', DocumentDesignerController::class);
+Route::apiResource('document-row', DocumentDesignerController::class);
 
 //Business Process route
-Route::resource('business_process', DocumentDesignerController::class);
+Route::apiResource('business_process', DocumentDesignerController::class);
 
 //MycentQuotation Service route
 Route::post('full-editor', [MycentQuotation\MycentQuotationController::class,'store']);

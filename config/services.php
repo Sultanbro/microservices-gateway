@@ -1,6 +1,7 @@
 <?php
 
 return [
+    'keycloak' => ['userinfo_url' => env('KEYCLOAK_USERINFO_URL')],
 
     /*
     |--------------------------------------------------------------------------

@@ -1,110 +1,61 @@
 <?php
 
-declare(strict_types = 1);
+declare(strict_types=1);
 
 namespace App\Traits\Request;
 
-use GuzzleHttp\Client;
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Http;
 
 trait RequestService
 {
-    /**
-     * @param       $method
-     * @param       $requestUrl
-     * @param array $formParams
-     * @param array $headers
-     *
-     * @return string
-     * @throws \GuzzleHttp\Exception\GuzzleException
-     */
     public function request($method, $requestUrl, $formParams = [], $headers = [])
     {
-        $client = new Client([
-            'base_uri' => $this->baseUri
-        ]);
-
-        if (isset($this->secret)) {
-            $headers['Authorization'] = $this->secret;
+        if (!$this->baseUri || !$this->secret) {
+            return response()->json(['error' => 'Upstream service is not configured'], 503);
         }
-
-        $response = $client->request($method, $requestUrl,
-            [
-                'form_params' => $formParams,
-                'headers' => $headers
-            ]
-        );
-
-        return $response->getBody()->getContents();
+        $headers['Authorization'] = $this->secret;
+        $options = ['headers' => $headers];
+        $options[in_array(strtoupper($method), ['GET', 'HEAD']) ? 'query' : 'form_params'] = $formParams;
+        try {
+            $upstream = Http::timeout(15)->withOptions(['connect_timeout' => 5])->withoutRedirecting()
+                ->send($method, rtrim($this->baseUri, '/') . '/' . ltrim($requestUrl, '/'), $options);
+        } catch (ConnectionException $exception) {
+            return response()->json(['error' => 'Upstream service unavailable'], 502);
+        }
+        if (!$upstream->successful()) {
+            $status = $upstream->status();
+            return response()->json(['error' => 'Upstream request failed'], $status >= 400 && $status <= 599 ? $status : 502);
+        }
+        return response($upstream->body(), $upstream->status())->header('Content-Type', 'application/json');
     }
 
-    /**
-     * @return mixed
-     * @throws \GuzzleHttp\Exception\GuzzleException
-     */
     public function index()
     {
-        try {
-            return $this->successResponse($this->request($this->getMethod(), $this->getLinkNoApi()));
-        } catch (\Exception $exception) {
-            return $this->errorResponse($exception->getMessage(), $exception->getCode());
-        }
+        return $this->request(request()->method(), $this->getLinkNoApi(), request()->query());
     }
 
-    /**
-     * @param $id
-     * @return mixed
-     * @throws \GuzzleHttp\Exception\GuzzleException
-     */
     public function show($id)
     {
-        try {
-            return $this->successResponse($this->request($this->getMethod(), $this->getUriNoIdAndApi()."$id"));
-        } catch (\Exception $exception) {
-            return $this->errorResponse($exception->getMessage(), $exception->getCode());
-        }
+        return $this->request(request()->method(), $this->getUriNoIdAndApi() . rawurlencode((string) $id), request()->query());
     }
 
-    /**
-     * @param Request $request
-     * @return mixed
-     * @throws \GuzzleHttp\Exception\GuzzleException
-     */
     public function store(Request $request)
     {
-        try {
-            return $this->successResponse($this->request($this->getMethod(), $this->getLinkNoApi(), $request->all() + ['created_by' => auth()->id(), 'updated_by' => auth()->id(),]));
-        } catch (\Exception $exception) {
-            return $this->errorResponse($exception->getMessage(), $exception->getCode());
-        }
+        return $this->request($request->method(), $this->getLinkNoApi(),
+            array_merge($request->all(), ['created_by' => auth()->id(), 'updated_by' => auth()->id()]));
     }
 
-    /**
-     * @param Request $request
-     * @param $id
-     * @return mixed
-     * @throws \GuzzleHttp\Exception\GuzzleException
-     */
     public function update(Request $request, $id)
     {
-        try {
-            return $this->successResponse($this->request($this->getMethod(), $this->getUriNoIdAndApi()."$id", $request->all() + ['updated_by' => auth()->id(),]));
-        } catch (\Exception $exception) {
-            return $this->errorResponse($exception->getMessage(), $exception->getCode());
-        }
+        $data = $request->except('created_by');
+        return $this->request($request->method(), $this->getUriNoIdAndApi() . rawurlencode((string) $id),
+            array_merge($data, ['updated_by' => auth()->id()]));
     }
 
-    /**
-     * @param $id
-     * @return mixed
-     * @throws \GuzzleHttp\Exception\GuzzleException
-     */
     public function destroy($id)
     {
-        try {
-            return $this->successResponse($this->request($this->getMethod(), $this->getUriNoIdAndApi()."$id"));
-        } catch (\Exception $exception) {
-            return $this->errorResponse($exception->getMessage(), $exception->getCode());
-        }
+        return $this->request(request()->method(), $this->getUriNoIdAndApi() . rawurlencode((string) $id));
     }
 }

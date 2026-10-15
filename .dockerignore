@@ -10,3 +10,7 @@ bootstrap/cache/*.php
 *.pfx
 .rnd
 auth.json
+
+vendor
+node_modules
+storage/logs/*
